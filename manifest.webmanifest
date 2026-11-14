@@ -1,0 +1,19 @@
+{
+  "name": "오늘의 투자 점검",
+  "short_name": "투자 점검",
+  "description": "장기 투자 의사결정 도우미의 휴대폰용 요약 화면",
+  "lang": "ko-KR",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f3f6f4",
+  "theme_color": "#0a6c55",
+  "icons": [
+    {
+      "src": "./icons/app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
