@@ -4,6 +4,8 @@ const won = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 0 });
 const percent = new Intl.NumberFormat("ko-KR", { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 });
 let deferredInstallPrompt = null;
 let lastPassphrase = "";
+let pushConfig = null;
+const proofContext = "investment-watch-registration-v1:";
 
 const text = (id, value) => { $(id).textContent = value; };
 const formatWon = (value) => `${won.format(Number(value || 0))}원`;
@@ -53,6 +55,132 @@ async function fetchAndDecrypt(passphrase) {
   const raw = await response.text();
   text("dataSize", `${Math.max(1, Math.ceil(new Blob([raw]).size / 1024))}KB`);
   return decryptEnvelope(JSON.parse(raw), passphrase);
+}
+
+function toBase64Url(bytes) {
+  let binary = "";
+  bytes.forEach((value) => { binary += String.fromCharCode(value); });
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function fromBase64Url(value) {
+  const padded = value + "=".repeat((4 - (value.length % 4)) % 4);
+  return fromBase64(padded.replace(/-/g, "+").replace(/_/g, "/"));
+}
+
+async function registrationProof(passphrase) {
+  const bytes = new TextEncoder().encode(`${proofContext}${passphrase}`);
+  return toBase64Url(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)));
+}
+
+async function loadPushConfig() {
+  if (pushConfig) return pushConfig;
+  const response = await fetch(`./push-config.json?t=${Date.now()}`, { cache: "no-store" });
+  if (!response.ok) throw new Error("가격 알림 설정을 가져오지 못했습니다.");
+  pushConfig = await response.json();
+  return pushConfig;
+}
+
+async function pushFetch(path, options = {}) {
+  const config = await loadPushConfig();
+  if (!config.endpoint) throw new Error("가격 알림 서버가 아직 등록되지 않았습니다.");
+  const proof = await registrationProof(lastPassphrase);
+  return fetch(`${config.endpoint.replace(/\/$/, "")}${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      "X-Registration-Proof": proof,
+      ...(options.headers || {}),
+    },
+  });
+}
+
+function pushSupported() {
+  return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+}
+
+async function refreshPushStatus() {
+  if (!pushSupported()) {
+    text("pushStatus", "이 브라우저는 백그라운드 푸시 알림을 지원하지 않습니다.");
+    $("connectPushButton").disabled = true;
+    return;
+  }
+  try {
+    const config = await loadPushConfig();
+    if (!config.endpoint) {
+      text("pushStatus", "서버 최초 등록이 남아 있습니다. 등록 전까지는 아침 점검만 표시됩니다.");
+      $("connectPushButton").disabled = true;
+      return;
+    }
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.getSubscription();
+    $("disconnectPushButton").hidden = !subscription;
+    text("pushStatus", subscription
+      ? "이 기기는 5분 가격 재검토선 알림에 연결되어 있습니다."
+      : "알림을 받으려면 이 기기에서 한 번만 연결하세요.");
+    if (subscription) {
+      const response = await pushFetch("/api/status", { method: "GET" });
+      if (response.ok) {
+        const status = await response.json();
+        if (status.checked_at) {
+          text("pushLastCheck", `서버 최근 확인 ${new Date(status.checked_at).toLocaleString("ko-KR")}`);
+        }
+      }
+    }
+  } catch (error) {
+    text("pushStatus", error.message);
+  }
+}
+
+async function connectPush() {
+  text("pushStatus", "알림 권한과 서버 연결을 확인하고 있습니다…");
+  try {
+    if (!pushSupported()) throw new Error("이 브라우저에서는 푸시 알림을 사용할 수 없습니다.");
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") throw new Error("휴대폰 알림 권한이 허용되지 않았습니다.");
+    const config = await loadPushConfig();
+    if (!config.endpoint) throw new Error("가격 알림 서버가 아직 등록되지 않았습니다.");
+    const publicResponse = await fetch(`${config.endpoint.replace(/\/$/, "")}/api/config`);
+    if (!publicResponse.ok) throw new Error("가격 알림 서버 설정을 확인하지 못했습니다.");
+    const publicConfig = await publicResponse.json();
+    const registration = await navigator.serviceWorker.ready;
+    let subscription = await registration.pushManager.getSubscription();
+    if (!subscription) {
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: fromBase64Url(publicConfig.vapid_public_key),
+      });
+    }
+    const response = await pushFetch("/api/subscribe", {
+      method: "POST",
+      body: JSON.stringify(subscription.toJSON()),
+    });
+    if (!response.ok) throw new Error("이 기기의 알림 등록을 완료하지 못했습니다.");
+    const testResponse = await pushFetch("/api/test", { method: "POST", body: "{}" });
+    if (!testResponse.ok) throw new Error("등록은 됐지만 시험 알림 전송에 실패했습니다.");
+    text("pushStatus", "연결 완료. 잠시 후 시험 알림이 오며, 이후 조건 도달 때만 알립니다.");
+    $("disconnectPushButton").hidden = false;
+  } catch (error) {
+    text("pushStatus", error.message);
+  }
+}
+
+async function disconnectPush() {
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.getSubscription();
+    if (subscription) {
+      await pushFetch("/api/subscribe", {
+        method: "DELETE",
+        body: JSON.stringify({ endpoint: subscription.endpoint }),
+      });
+      await subscription.unsubscribe();
+    }
+    text("pushStatus", "이 기기의 가격 알림을 해제했습니다.");
+    $("disconnectPushButton").hidden = true;
+  } catch (error) {
+    text("pushStatus", error.message);
+  }
 }
 
 function renderActions(data) {
@@ -151,6 +279,7 @@ function render(data) {
   renderActions(data);
   renderHoldings(data);
   renderMonthly(data);
+  refreshPushStatus();
   const changes = Array.isArray(data.material_changes) ? data.material_changes : [];
   $("changesCard").hidden = !changes.length;
   $("materialChanges").replaceChildren(...changes.map((change) => {
@@ -176,6 +305,8 @@ $("unlockForm").addEventListener("submit", (event) => {
   unlock($("passphrase").value);
 });
 $("refreshButton").addEventListener("click", () => unlock(lastPassphrase));
+$("connectPushButton").addEventListener("click", connectPush);
+$("disconnectPushButton").addEventListener("click", disconnectPush);
 
 window.addEventListener("beforeinstallprompt", (event) => {
   event.preventDefault();

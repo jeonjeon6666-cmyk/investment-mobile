@@ -156,6 +156,13 @@ li { margin: 7px 0; line-height: 1.45; }
 .negative { color: var(--danger); }
 .unknown { color: var(--muted); }
 
+.push-card { border-color: #badbd0; background: #fbfffd; }
+.push-description { color: var(--muted); line-height: 1.6; }
+.push-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.push-status { margin: 14px 0 4px; color: #29423a; font-weight: 700; line-height: 1.45; }
+.push-last-check { color: var(--muted); line-height: 1.45; }
+button:disabled { cursor: not-allowed; opacity: 0.55; }
+
 .footnote { margin: 18px 5px 0; color: var(--muted); font-size: 0.78rem; line-height: 1.55; }
 
 @media (max-width: 560px) {
