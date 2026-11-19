@@ -5,6 +5,7 @@ const percent = new Intl.NumberFormat("ko-KR", { style: "percent", minimumFracti
 let deferredInstallPrompt = null;
 let lastPassphrase = "";
 let pushConfig = null;
+let refreshInFlight = false;
 const proofContext = "investment-watch-registration-v1:";
 
 const text = (id, value) => { $(id).textContent = value; };
@@ -290,6 +291,8 @@ function render(data) {
 }
 
 async function unlock(passphrase) {
+  if (refreshInFlight) return;
+  refreshInFlight = true;
   text("unlockMessage", "암호화된 최신 결과를 확인하고 있습니다…");
   try {
     const data = await fetchAndDecrypt(passphrase);
@@ -297,6 +300,14 @@ async function unlock(passphrase) {
     render(data);
   } catch (error) {
     text("unlockMessage", error.name === "OperationError" ? "비밀번호가 맞지 않습니다." : error.message);
+  } finally {
+    refreshInFlight = false;
+  }
+}
+
+function refreshLatestResult() {
+  if (lastPassphrase && document.visibilityState === "visible") {
+    unlock(lastPassphrase);
   }
 }
 
@@ -322,5 +333,15 @@ $("installButton").addEventListener("click", async () => {
 });
 
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js"));
+  window.addEventListener("load", async () => {
+    const registration = await navigator.serviceWorker.register(
+      "./sw.js",
+      { updateViaCache: "none" },
+    );
+    registration.update().catch(() => {});
+  });
 }
+
+document.addEventListener("visibilitychange", refreshLatestResult);
+window.addEventListener("pageshow", refreshLatestResult);
+window.addEventListener("online", refreshLatestResult);

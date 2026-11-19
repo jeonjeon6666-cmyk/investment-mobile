@@ -1,5 +1,5 @@
-const SHELL_CACHE = "investment-helper-shell-v2";
-const DATA_CACHE = "investment-helper-data-v1";
+const SHELL_CACHE = "investment-helper-shell-v3";
+const DATA_CACHE = "investment-helper-data-v2";
 const shell = [
   "./",
   "./index.html",
@@ -39,7 +39,21 @@ self.addEventListener("fetch", (event) => {
     );
     return;
   }
-  event.respondWith(caches.match(event.request).then((cached) => cached || fetch(event.request)));
+  if (url.origin === self.location.origin) {
+    event.respondWith(
+      fetch(event.request, { cache: "no-store" })
+        .then((response) => {
+          if (response.ok && event.request.method === "GET") {
+            const copy = response.clone();
+            caches.open(SHELL_CACHE).then((cache) => cache.put(event.request, copy));
+          }
+          return response;
+        })
+        .catch(() => caches.match(event.request)),
+    );
+    return;
+  }
+  event.respondWith(fetch(event.request));
 });
 
 self.addEventListener("push", (event) => {
