@@ -43,8 +43,12 @@
             <p id="checkedAt" class="eyebrow"></p>
             <h2 id="headline"></h2>
             <p id="statusExplanation"></p>
+            <p id="scheduleStatus" class="schedule-status">결과 목표: 오전 8:10 전 · 오전 11:30 전 (한국시간)</p>
           </div>
-          <button id="refreshButton" class="ghost" type="button">새로고침</button>
+          <div class="refresh-control">
+            <button id="refreshButton" class="ghost" type="button">최신 결과 확인</button>
+            <small id="refreshStatus" role="status">서버에 올라온 최신 결과를 확인합니다.</small>
+          </div>
         </div>
 
         <section class="summary-grid" aria-label="핵심 상태">

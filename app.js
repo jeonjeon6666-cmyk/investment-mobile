@@ -6,6 +6,7 @@ let deferredInstallPrompt = null;
 let lastPassphrase = "";
 let pushConfig = null;
 let refreshInFlight = false;
+let lastPublishedAt = "";
 const proofContext = "investment-watch-registration-v1:";
 
 const text = (id, value) => { $(id).textContent = value; };
@@ -48,8 +49,9 @@ async function decryptEnvelope(envelope, passphrase) {
   return JSON.parse(new TextDecoder().decode(plaintext));
 }
 
-async function fetchAndDecrypt(passphrase) {
-  const response = await fetch(`${encryptedUrl}?t=${Date.now()}`, { cache: "no-store" });
+async function fetchAndDecrypt(passphrase, networkOnly = false) {
+  const query = networkOnly ? `fresh=${Date.now()}` : `t=${Date.now()}`;
+  const response = await fetch(`${encryptedUrl}?${query}`, { cache: "no-store" });
   if (!response.ok) {
     throw new Error(response.status === 404 ? "아직 휴대폰용 결과가 올라오지 않았습니다." : "결과를 가져오지 못했습니다.");
   }
@@ -262,7 +264,7 @@ function renderMonthly(data) {
 function render(data) {
   $("unlockPanel").hidden = true;
   $("dashboard").hidden = false;
-  text("checkedAt", `${data.checked_at ? new Date(data.checked_at).toLocaleString("ko-KR") : "시각 확인 필요"} 점검`);
+  text("checkedAt", `결과 완료 ${data.checked_at ? new Date(data.checked_at).toLocaleString("ko-KR") : "시각 확인 필요"}`);
   text("headline", data.headline || "점검 결과 확인 필요");
   const stateMessage = {
     quiet: "새 거래나 중요한 변화가 없습니다.",
@@ -290,18 +292,38 @@ function render(data) {
   }));
 }
 
-async function unlock(passphrase) {
+async function unlock(passphrase, options = {}) {
   if (refreshInFlight) return;
+  const manual = Boolean(options.manual);
   refreshInFlight = true;
-  text("unlockMessage", "암호화된 최신 결과를 확인하고 있습니다…");
+  const previousPublishedAt = lastPublishedAt;
+  if (manual) {
+    $("refreshButton").disabled = true;
+    text("refreshButton", "확인 중…");
+    text("refreshStatus", "서버에서 최신 파일을 새로 받고 있습니다.");
+  } else {
+    text("unlockMessage", "암호화된 최신 결과를 확인하고 있습니다…");
+  }
   try {
-    const data = await fetchAndDecrypt(passphrase);
+    const data = await fetchAndDecrypt(passphrase, manual);
     lastPassphrase = passphrase;
+    lastPublishedAt = String(data.generated_at || data.checked_at || "");
     render(data);
+    if (manual) {
+      const changed = Boolean(previousPublishedAt && lastPublishedAt !== previousPublishedAt);
+      text("refreshStatus", changed
+        ? "새 점검 결과를 반영했습니다."
+        : "서버 최신 결과를 확인했습니다. 새 점검 결과는 아직 없습니다.");
+    }
   } catch (error) {
-    text("unlockMessage", error.name === "OperationError" ? "비밀번호가 맞지 않습니다." : error.message);
+    const message = error.name === "OperationError" ? "비밀번호가 맞지 않습니다." : error.message;
+    text(manual ? "refreshStatus" : "unlockMessage", manual ? `${message} 저장된 화면은 그대로 유지합니다.` : message);
   } finally {
     refreshInFlight = false;
+    if (manual) {
+      $("refreshButton").disabled = false;
+      text("refreshButton", "최신 결과 확인");
+    }
   }
 }
 
@@ -315,7 +337,7 @@ $("unlockForm").addEventListener("submit", (event) => {
   event.preventDefault();
   unlock($("passphrase").value);
 });
-$("refreshButton").addEventListener("click", () => unlock(lastPassphrase));
+$("refreshButton").addEventListener("click", () => unlock(lastPassphrase, { manual: true }));
 $("connectPushButton").addEventListener("click", connectPush);
 $("disconnectPushButton").addEventListener("click", disconnectPush);
 
