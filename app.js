@@ -279,7 +279,11 @@ function render(data) {
   text("marketRegime", data.market_regime || "확인 필요");
   const portfolio = data.portfolio || {};
   text("cashLikeRatio", portfolio.cash_like_ratio == null ? "확인 필요" : percent.format(portfolio.cash_like_ratio));
-  text("cashLikeAmount", formatWon(portfolio.cash_like_krw));
+  const targetCash = portfolio.target_cash_like_ratio == null
+    ? "목표 확인 필요"
+    : `목표 ${percent.format(portfolio.target_cash_like_ratio)}`;
+  text("cashLikeAmount", `${formatWon(portfolio.cash_like_krw)} · ${targetCash}`);
+  $("cashLikeAmount").title = portfolio.cash_target_basis || "";
   renderActions(data);
   renderHoldings(data);
   renderMonthly(data);
