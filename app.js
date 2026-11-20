@@ -230,10 +230,11 @@ function renderHoldings(data) {
   for (const holding of holdings) {
     const row = document.createElement("div");
     row.className = "table-row";
+    const valueKnown = holding.market_value_krw != null;
     const pnlKnown = holding.pnl_krw != null && holding.pnl_ratio != null;
     row.innerHTML = `
       <div><strong>${holding.name}</strong><small>${holding.ticker} · ${Number(holding.shares).toLocaleString("ko-KR")}주</small></div>
-      <div class="right"><strong>${formatWon(holding.market_value_krw)}</strong><small>평가금액</small></div>
+      <div class="right"><strong>${valueKnown ? formatWon(holding.market_value_krw) : "평가 보류"}</strong><small>${valueKnown ? "평가금액" : "최신 판단 재확인 필요"}</small></div>
       <div class="right ${ratioClass(holding.pnl_ratio)}"><strong>${pnlKnown ? `${Number(holding.pnl_krw) >= 0 ? "+" : ""}${formatWon(holding.pnl_krw)}` : "계산 보류"}</strong><small>${pnlKnown ? percent.format(holding.pnl_ratio) : "원화 원가 확인 필요"}</small></div>
     `;
     root.append(row);
