@@ -41,6 +41,8 @@
         <div id="statusHero" class="hero card">
           <div>
             <p id="checkedAt" class="eyebrow"></p>
+            <p id="portfolioSyncedAt" class="eyebrow"></p>
+            <p id="researchStatus" class="eyebrow" hidden></p>
             <h2 id="headline"></h2>
             <p id="statusExplanation"></p>
             <p id="scheduleStatus" class="schedule-status">결과 목표: 오전 8:10 전 · 오전 11:30 전 (한국시간)</p>
@@ -68,6 +70,15 @@
           </article>
         </section>
 
+        <section id="researchDetails" class="card section-card" hidden>
+          <h2>모의투자 점검</h2>
+          <p id="researchCheck"></p>
+          <ul id="researchPrices"></ul>
+          <ul id="researchAccounts"></ul>
+          <p id="researchForecasts"></p>
+          <ul id="researchComparisons"></ul>
+        </section>
+
         <section class="card section-card push-card">
           <div class="section-title">
             <div>
@@ -92,13 +103,13 @@
           <div class="section-title">
             <div>
               <p class="eyebrow">가장 먼저 확인</p>
-              <h2>오늘 할 일</h2>
+              <h2>매수·매도 제안</h2>
             </div>
             <span id="actionBadge" class="badge"></span>
           </div>
           <div id="actions"></div>
           <details id="blockingDetails" hidden>
-            <summary>주문이 보류된 이유</summary>
+            <summary>투자 판단이 보류된 이유</summary>
             <ul id="blockingReasons"></ul>
           </details>
         </section>
@@ -134,7 +145,7 @@
         </section>
 
         <p class="footnote">
-          이 화면은 증권사 주문을 자동 실행하지 않습니다. “주문 가능”이어도 증권사 실제 가격·환율·수수료를 확인한 뒤 직접 실행하세요.
+          실제 주문은 증권사 앱에서 직접 진행하세요. 투자 제안의 기준일과 증권사의 가격·환율·수수료를 확인하세요.
         </p>
       </section>
     </main>

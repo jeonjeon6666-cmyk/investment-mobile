@@ -189,29 +189,47 @@ async function disconnectPush() {
 function renderActions(data) {
   const root = $("actions");
   root.replaceChildren();
-  const actions = Array.isArray(data.actions) ? data.actions : [];
-  const blocked = Boolean(data.execution_blocked);
+  const suggestions = Array.isArray(data.recommendations) ? data.recommendations : null;
+  const actions = suggestions ?? (Array.isArray(data.actions) ? data.actions : []);
+  const blocked = Boolean(data.execution_blocked) && !(suggestions?.length);
+  const dataBlocked = Boolean(data.data_connection_blocked);
   if (!actions.length) {
-    root.innerHTML = `<div class="empty"><strong>오늘 새로 실행할 거래가 없습니다.</strong><br>기존 보유분과 적립 계획을 유지합니다.</div>`;
-    text("actionBadge", "거래 없음");
+    root.innerHTML = dataBlocked
+      ? '<div class="empty"><strong>자료 연결 때문에 일부 투자 판단이 보류됐습니다.</strong><br>아래에서 보류 사유를 확인하세요.</div>'
+      : '<div class="empty"><strong>지금 표시할 매수·매도 제안이 없습니다.</strong></div>';
+    text("actionBadge", dataBlocked ? "자료 확인 필요" : blocked ? "판단 보류" : "제안 없음");
   } else {
-    text("actionBadge", blocked ? "주문 보류" : `${actions.length}건 확인`);
+    text("actionBadge", blocked ? "판단 보류" : `${actions.length}건 제안`);
     $("actionBadge").className = `badge ${blocked ? "danger" : "warn"}`;
     for (const action of actions) {
       const row = document.createElement("article");
-      row.className = `action-row ${action.order_allowed ? "" : "blocked"}`;
+      const verified = suggestions !== null || action.order_allowed;
+      row.className = `action-row ${verified ? "" : "blocked"}`;
       const shares = Number(action.shares).toLocaleString("ko-KR", { maximumFractionDigits: 4 });
-      row.innerHTML = `
-        <h3>${action.name} <small>${action.ticker}</small></h3>
-        <strong>${action.order_allowed ? "1차" : "계산상"} ${action.side} ${shares}주 · ${formatWon(action.amount_krw)}</strong>
-        <p>가격 기준일 ${action.price_date || "확인 필요"}</p>
-        <p>${action.reason || "상세 이유는 PC 화면에서 확인하세요."}</p>
-      `;
+      const lines = [
+        ["h3", `${action.name} (${action.ticker})`],
+        ["strong", `${verified ? "투자 제안" : "계산상 후보"} ${action.side} ${shares}주 · ${formatWon(action.amount_krw)}`],
+        ["p", `가격 기준일 ${action.price_date || "확인 필요"}`],
+        ["p", action.reason || "상세 이유는 PC 화면에서 확인하세요."],
+      ];
+      for (const [tag, value] of lines) {
+        const line = document.createElement(tag);
+        line.textContent = value;
+        row.append(line);
+      }
       root.append(row);
     }
   }
-  const reasons = Array.isArray(data.blocking_reasons) ? data.blocking_reasons : [];
-  $("blockingDetails").hidden = !blocked;
+  if (data.trade_pause_reason && !suggestions?.length) {
+    const pause = document.createElement("p");
+    pause.textContent = String(data.trade_pause_reason);
+    root.append(pause);
+  }
+  const reasons = [...new Set([
+    ...(Array.isArray(data.blocking_reasons) ? data.blocking_reasons : []),
+    ...(Array.isArray(data.data_connection_reasons) ? data.data_connection_reasons : []),
+  ])];
+  $("blockingDetails").hidden = !(blocked || dataBlocked);
   $("blockingReasons").replaceChildren(...reasons.map((reason) => {
     const li = document.createElement("li");
     li.textContent = reason;
@@ -262,11 +280,98 @@ function renderMonthly(data) {
   }
 }
 
+function renderResearch(research) {
+  const summary = $("researchStatus");
+  if (summary) {
+    summary.hidden = !research;
+    if (research) {
+      summary.textContent = `연구 점검 ${new Date(research.checked_at).toLocaleString("ko-KR")} · 검증 호가 ${research.verified_quotes}건 · 가상 체결 ${research.hypothetical_fills}건`;
+    }
+  }
+  const panel = $("researchDetails");
+  const details = research?.details;
+  if (!panel) return;
+  panel.hidden = !details;
+  if (!details) return;
+  const names = { "005930.KS": "삼성전자", GOOG: "알파벳", "487240.KS": "전력 ETF" };
+  const problems = {
+    unverified_bid_or_ask: "검증 호가 없음", valuation_unqualified: "가치평가 기준 미충족",
+    macro_input_unverified: "경제 지표 미확인", unverified_etf_inav: "장중 순자산가치 미확인",
+    etf_inav_adverse_gap: "장중 순자산가치와의 차이가 큼", unverified_fx: "환율 미확인",
+    monthly_stage_already_filled: "이번 달 회차 처리 완료", lot_budget_or_size: "예산 또는 호가 잔량 부족",
+    month_open_marks_missing: "월초 평가가격 미확인", portfolio_marks_missing: "보유 종목 시세 미확인",
+    fixed_cash_marks_missing: "보유 종목 시세 미확인",
+  };
+  const states = {
+    issued_token: "인증 성공", cached_token: "저장 토큰 사용", configured_token: "설정 토큰 사용",
+    missing_kis_app_credentials: "키 미설정", no_api_key: "키 미설정",
+    confirmed_broker_tls_stream_required: "암호화 실시간 연결 미확인",
+    market_credentials_windows_user_cannot_decrypt: "이 Windows 계정에서 키를 열 수 없음", observed: "자료 조회 성공",
+    outside_regular_session: "정규장 밖", verified_realtime: "실시간 호가 확인", partial_realtime: "일부 실시간 호가 확인",
+    meritz_token_unavailable: "메리츠 인증 실패", meritz_quote_not_received: "호가 수신 대기",
+    meritz_stream_unavailable: "시세 연결 실패", meritz_subscription_rejected: "시세 구독 거절",
+    no_etf_rows_for_requested_date: "당일 ETF 자료 게시 대기",
+    http_401: "인증 실패", http_403: "접근 거부", http_429: "요청 한도 도달",
+  };
+  const check = details.last_run || {};
+  const runState = {recorded: "기록 완료", unavailable: "실행 실패", deferred: "실행 보류",
+    skipped_concurrent_research: "다른 점검 진행 중"}[check.state] || "기록 미확인";
+  const connection = details.connection || {};
+  const stateLabel = (state) => states[state] || "미확인";
+  text("researchCheck", `최근 실행 ${runState}${check.checked_at ? ` · ${new Date(check.checked_at).toLocaleString("ko-KR")}` : ""} · 예약 실행 여부 미확인 · ${connection.broker === "Meritz" ? "메리츠" : "KIS"} ${stateLabel(connection.kis)} · KRX ${stateLabel(connection.krx)} · 실시간 연결 ${stateLabel(connection.stream)}`);
+  const list = (id, rows) => $(id).replaceChildren(...rows.map((value) => {
+    const li = document.createElement("li");
+    li.textContent = value;
+    return li;
+  }));
+  const kinds = {verified_hoga: "검증 호가", regular_close: "정규장 종가", operator_reference: "운용사 참고 시세"};
+  const sessions = {regular: "정규장", before_regular: "개장 전", after_regular: "장 종료 후", closed_day: "휴장"};
+  list("researchPrices", (details.prices || []).map((row) => {
+    const price = (value) => value == null ? "—" : new Intl.NumberFormat("ko-KR", {style: "currency", currency: row.currency}).format(value);
+    const market = row.kind
+      ? `${kinds[row.kind]} ${row.source}${row.kind === "verified_hoga" ? (row.bid && row.ask ? ` · 매수 ${price(row.bid)} (${row.bid_size ?? "—"}주) / 매도 ${price(row.ask)} (${row.ask_size ?? "—"}주)` : "") : ` · ${price(row.current)}`}`
+      : `시세 미확인${row.session && sessions[row.session] ? ` (${sessions[row.session]})` : ""}`;
+    const value = row.research_value_range?.map(price).join("~");
+    return `${names[row.ticker]} · 가치평가 ${row.grade || "미확인"}${value ? ` · 연구 가치범위 ${value}` : ""} · ${market}${row.observed_at ? ` · ${new Date(row.observed_at).toLocaleString("ko-KR")}` : ""}`;
+  }));
+  const strategies = {A: "정기적립", B: "가치", C: "가치·공통 위험", D: "가치·공통 위험·거시", E: "고정 현금"};
+  list("researchAccounts", (details.strategies || []).flatMap((account) => {
+    const partial = !account.return_complete ? " (일부 평가 구간 누락)" : "";
+    const perf = account.return == null ? "수익률 미확인" : `관측 수익률 ${percent.format(account.return)}${partial}`;
+    const candidate = {buy: "모의 매수 검토", sell: "모의 매도 검토", hold: "보류"};
+    const actions = account.actions.map((action) => action.shares
+      ? `${names[action.ticker]} 가상 ${action.side === "buy" ? "매수" : "매도"} ${action.shares}주 · 체결가 ${formatWon(action.fill_price_krw)} · 수수료 ${formatWon(action.fee_krw)}`
+      : `${names[action.ticker]} ${candidate[action.side]} · ${problems[action.reason] || "체결 없음"}`);
+    return [`${account.code} ${strategies[account.code]} · ${perf}${actions.length ? ` · ${actions.join(" / ")}` : ""}`];
+  }));
+  text("researchForecasts", `공식 실적과 비교 ${details.official_forecast_comparisons}건 · 발표 대기 ${details.pending_forecasts}건`);
+  const metrics = {capex_bn: "설비투자(십억 달러)", revenue_bn: "매출(십억 달러)",
+    parent_profit_krw: "지배주주 순이익(원)", working_samsung_ebit_trillion_krw: "영업이익(조 원)"};
+  const number = new Intl.NumberFormat("ko-KR", {maximumFractionDigits: 2});
+  list("researchComparisons", (details.compared_forecasts || []).map((item) =>
+    `${names[item.ticker]} ${item.period} ${metrics[item.metric]} · 최초 ${number.format(item.initial)} / 실제 ${number.format(item.actual)}`));
+}
+
 function render(data) {
   $("unlockPanel").hidden = true;
   $("dashboard").hidden = false;
   text("checkedAt", `결과 완료 ${data.checked_at ? new Date(data.checked_at).toLocaleString("ko-KR") : "시각 확인 필요"}`);
+  if ($("portfolioSyncedAt")) {
+    text("portfolioSyncedAt", `서버에 마지막으로 반영된 PC 변경 ${data.portfolio_synced_at ? new Date(data.portfolio_synced_at).toLocaleString("ko-KR") : "시각 미확인"}`);
+  }
+  const policy = data.policy_check;
+  if (policy?.current_version) {
+    $("checkedAt").append(document.createTextNode(
+      ` · 계산 규칙 ${policy.current_version} · 고정 기준 ${policy.saved_version || "확인 필요"}`
+    ));
+  }
+  $("checkedAt").title = [
+    policy?.source_commit && `서버 배포 ${policy.source_commit}`,
+    policy?.current_files_hash && `현재 계산파일 지문 ${policy.current_files_hash}`,
+    policy?.saved_files_hash && `고정 계산파일 지문 ${policy.saved_files_hash}`,
+  ].filter(Boolean).join("\n");
   text("headline", data.headline || "점검 결과 확인 필요");
+  renderResearch(data.forward_research);
   const stateMessage = {
     quiet: "새 거래나 중요한 변화가 없습니다.",
     action: "수량과 주문 가능 여부를 확인하세요.",
@@ -282,7 +387,8 @@ function render(data) {
   const targetCash = portfolio.target_cash_like_ratio == null
     ? "목표 확인 필요"
     : `목표 ${percent.format(portfolio.target_cash_like_ratio)}`;
-  text("cashLikeAmount", `${formatWon(portfolio.cash_like_krw)} · ${targetCash}`);
+  const cashLikeAmount = portfolio.cash_like_krw == null ? "현금성 평가 확인 필요" : formatWon(portfolio.cash_like_krw);
+  text("cashLikeAmount", `${cashLikeAmount} · ${targetCash}`);
   $("cashLikeAmount").title = portfolio.cash_target_basis || "";
   renderActions(data);
   renderHoldings(data);

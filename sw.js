@@ -1,4 +1,4 @@
-const SHELL_CACHE = "investment-helper-shell-v5";
+const SHELL_CACHE = "investment-helper-shell-v9";
 const DATA_CACHE = "investment-helper-data-v3";
 const shell = [
   "./",
